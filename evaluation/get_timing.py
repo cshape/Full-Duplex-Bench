@@ -51,10 +51,22 @@ else:
 
 # -------------- Helpers --------------------
 def load_wav(p: Path):
-    wav, sr = torchaudio.load(p)
-    if sr != SR:
-        wav = torchaudio.functional.resample(wav, sr, SR)
-    return wav.squeeze(0)
+    # Try to use soundfile backend which is more reliable
+    try:
+        import soundfile as sf
+        wav, sr = sf.read(p, dtype='float32')
+        wav = torch.from_numpy(wav)
+        if wav.ndim > 1:
+            wav = wav.mean(dim=1)
+        if sr != SR:
+            wav = torch.tensor(wav, dtype=torch.float32)
+            wav = torchaudio.functional.resample(wav, sr, SR)
+        return wav
+    except:
+        wav, sr = torchaudio.load(p, backend="sox_io")
+        if sr != SR:
+            wav = torchaudio.functional.resample(wav, sr, SR)
+        return wav.squeeze(0)
 
 
 def _merge(seg: List[Tuple[float, float]], gap_thr: float):

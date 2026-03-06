@@ -5,16 +5,13 @@
 import fs from "fs";
 import fetch from "node-fetch";
 import minimist from "minimist";
-import pkg from "wrtc";
+import pkg from "@roamhq/wrtc";
 const { RTCPeerConnection, nonstandard } = pkg;
 import "dotenv/config";
 import wav from "wav";
 
 (async () => {
-  ///////////////////////////////////////
-  // IMPORTANT: Set your OpenAI API key
-  const apiKey = "YOUR_OPENAI_API_KEY"; // Replace with your actual API key
-  ///////////////////////////////////////
+  const apiKey = process.env.OPENAI_API_KEY;
 
   // Parse command-line arguments
   const argv = minimist(process.argv.slice(2), {
@@ -175,11 +172,14 @@ import wav from "wav";
     await new Promise((r) => setTimeout(r, 10));
   }
 
-  // Signal end of input
-  track.stop();
-
-  // Wait
-  while (!done) await new Promise((r) => setTimeout(r, 50));
+  // Wait a few seconds for any in-flight response to finish
+  const gracePeriod = 5000; // 5s after input ends
+  const waitStart = Date.now();
+  while (!done && Date.now() - waitStart < gracePeriod) {
+    const silentFrame = new Int16Array(frameSize);
+    source.onData({ samples: silentFrame, sampleRate, bitsPerSample: 16, channelCount: 1 });
+    await new Promise((r) => setTimeout(r, 10));
+  }
 
   // First, save GPT response as a separate WAV file
   console.log("Saving GPT response...");

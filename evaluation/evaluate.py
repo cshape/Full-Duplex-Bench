@@ -1,9 +1,8 @@
 import argparse
+import os
 from openai import OpenAI
 
-# For OpenAI API api key
-# organization = "YOUR_ORG_ID"
-api_key = "YOUR_API_KEY"
+api_key = os.environ.get("OPENAI_API_KEY")
 
 
 def main():

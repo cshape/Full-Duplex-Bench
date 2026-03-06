@@ -110,20 +110,121 @@ conda activate full-duplex-bench
 pip install -r requirements.txt
 ```
 
-### Step-by-step Instruction
-#### 1. Model Inference
-The goal of model inference is to let the model generate the time-synchronous `output.wav` given the audio stream of user speech (`input.wav`). You can use you own model to generate the output speech for evaluation.
+### Environment Variables
 
-We will provide the example inference code of Freeze-omni under `model_inference/freeze-omni` for different tasks. 
+Create a `.env` file in the project root (or set these in your shell). Which keys you need depends on which models and pipeline steps you run:
+
+| Variable | Required for | Notes |
+|----------|-------------|-------|
+| `OPENAI_API_KEY` | GPT-4o inference, `user_interruption` evaluation (GPT-4o judge) | [OpenAI API keys](https://platform.openai.com/api-keys) |
+| `ASSEMBLYAI_API_KEY` | ASR transcription (`asr_assemblyai.py`) | [AssemblyAI dashboard](https://www.assemblyai.com/app) |
+| `INWORLD_API_KEY` | Inworld inference | Set in `model_inference/inworld/.env` |
+
+Example `.env`:
+```
+OPENAI_API_KEY=sk-...
+ASSEMBLYAI_API_KEY=...
+INWORLD_API_KEY=...
+```
+
+### Running the v1.0 Evaluation Pipeline
+
+The full pipeline for each task is: **create dataset subset → run inference → ASR transcription → evaluate → combine audio**.
+
+#### 1. Create a dataset subset
+
+Select samples from the source dataset and symlink them into a new directory. For example, to create a 10-sample subset for the Inworld model on the `user_interruption` task:
+
+```bash
+SRC=dataset/v1.0/synthetic_user_interruption
+DEST=dataset/v1.0/interruption_10_inworld
+
+for i in $(seq 1 10); do
+  mkdir -p "$DEST/$i"
+  ln -sf "$(pwd)/$SRC/$i/input.wav" "$DEST/$i/input.wav"
+  ln -sf "$(pwd)/$SRC/$i/interrupt.json" "$DEST/$i/interrupt.json"  # task-specific metadata
+done
+```
+
+Each task requires different metadata files to be symlinked alongside `input.wav`:
+
+| Task | Source dataset | Extra files to symlink |
+|------|---------------|----------------------|
+| `pause_handling` | `synthetic_pause_handling/` | `pause.json`, `transcription.json` |
+| `user_interruption` | `synthetic_user_interruption/` | `interrupt.json` |
+| `smooth_turn_taking` | `candor_turn_taking/` | `turn_taking.json` |
+| `backchannel` | `icc_backchannel/` | _(none)_ |
+
+#### 2. Run model inference
+
+Inference streams `input.wav` to the model and produces `output.wav`:
+
+```bash
+# Inworld
+cd model_inference/inworld
+bash inference.sh /path/to/dataset/v1.0/interruption_10_inworld 4
+
+# GPT-4o
+cd model_inference/gpt4o
+bash inference.sh /path/to/dataset/v1.0/interruption_10_gpt4o 4
+```
+
+The second argument is the number of parallel jobs (default 4).
+
+#### 3. ASR transcription
+
+Transcribe model output to get word-level timestamps (`output.json`):
+
+```bash
+cd get_transcript
+python asr_assemblyai.py --root_dir /path/to/dataset --task full
+```
+
+For `user_interruption`, use `--task user_interruption` to crop transcription to after the interrupt point.
+
+#### 4. Run evaluation
+
+```bash
+cd evaluation
+python evaluate.py --task {TASK} --root_dir /path/to/dataset
+```
+
+Where `{TASK}` is one of: `pause_handling`, `smooth_turn_taking`, `user_interruption`, `backchannel`.
+
+**Note:** `user_interruption` requires `OPENAI_API_KEY` (uses GPT-4o as a relevance judge). `backchannel` requires `silero-vad` (`pip install silero-vad`).
+
+#### 5. Combine audio (optional)
+
+Generate stereo (left=user, right=model) and mono conversation files for listening:
+
+```bash
+cd evaluation
+python combine_audio.py --root_dir /path/to/dataset
+```
+
+### What each task measures
+
+| Task | Model should... | Good TOR | Key metrics |
+|------|----------------|----------|-------------|
+| `pause_handling` | Stay silent during pauses | 0 (low) | TOR |
+| `user_interruption` | Respond after being interrupted | 1 (high) | Latency, GPT-4o relevance (0-5) |
+| `smooth_turn_taking` | Respond when user finishes | 1 (high) | Latency |
+| `backchannel` | Give short acknowledgments, not full turns | 0 (low) | JSD, frequency |
+
+### Original Step-by-step Instruction
+#### 1. Model Inference
+The goal of model inference is to let the model generate the time-synchronous `output.wav` given the audio stream of user speech (`input.wav`). You can use your own model to generate the output speech for evaluation.
+
+We provide example inference code under `model_inference/` for different models.
 ##### ⚠️ Issue
-We have observed the same issue and suspect it is due to recent internal changes in **Gemini**.  
+We have observed the same issue and suspect it is due to recent internal changes in **Gemini**.
 We are investigating and will share updates once a solution is found.
 
 #### 2. Prepare for Evaluation with time-aligned transcription
 Under `get_transcript` folder, you can find `asr.py` to obtain the time-aligned transcription for the model generated audio. For more details please see the readme in the folder.
 
 #### 3. Running Evaluations
-Under `evaluation` folder, please see the readme file in the folder for detailed instruction to run the evaluation for each tasks.
+Under `evaluation` folder, please see the readme file in the folder for detailed instruction to run the evaluation for each task.
 
 ## Citation 📖
 If you have any questions, please feel free to submit an issue or contact Guan-Ting Lin (daniel094144@gmail.com)

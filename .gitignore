@@ -1,0 +1,15 @@
+# Secrets
+.env
+
+# Dependencies
+node_modules/
+
+# Dataset (too large for git)
+dataset/v1.0/
+
+# OS/IDE
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
